@@ -1,0 +1,87 @@
+This namelist contains various input parameters for RAMSES run cloud-wind
+
+&RUN_PARAMS 
+verbose=.false.
+hydro=.true.
+pic=.false.
+poisson=.false.
+ncontrol=10
+nsubcycle=1,1,1,1,1,1,1
+nremap=6
+/
+
+&AMR_PARAMS 
+levelmin=4
+levelmax=9
+ngridmax=1400000
+boxlen=1.0
+/
+
+&COOLING_PARAMS
+cooling = .true.
+metal = .true.
+/
+
+&POISSON_PARAMS 
+gravity_type=1
+gravity_params=1.87412,0.5,0.5,0.3
+/
+
+&BOUNDARY_PARAMS
+nboundary = 6
+ibound_min=-1,+1,-1,-1,-1,-1
+ibound_max=-1,+1,+1,+1,+1,+1
+jbound_min= 0, 0,-1,+1,-1,-1
+jbound_max= 0, 0,-1,+1,+1,+1
+kbound_min= 0, 0, 0, 0,-1,+1
+kbound_max= 0, 0, 0, 0,-1,+1
+bound_type= 2, 2, 2, 3, 2, 2
+/
+
+&UNITS_PARAMS
+units_density = 1.6726219E-24 ! proton masses per cc
+units_time    = 2.9939062E+15 ! G=1, 94.924 Myr
+units_length  = 0.308567758128200E+22 ! kpc
+/
+
+&INIT_PARAMS
+nregion=1
+/
+
+&OUTPUT_PARAMS
+delta_tout=0.006
+tend=0.3
+output_dir='/net/roland/data/users/gronnow/sims/test/paper3/'
+/
+
+&HYDRO_PARAMS
+gamma=1.667
+courant_factor=0.8
+slope_type=3
+scheme='muscl'
+riemann='hllc'
+/
+
+&REFINE_PARAMS 
+interpol_var=0
+interpol_type=1
+err_grad_d=0.01
+/
+
+&PROB_PARAMS
+x1_c=0.5
+x2_c=0.5
+x3_c=0.5
+vel_wind=200.0
+ndens_wind=1.d-3
+ndens_cloud=0.1
+T_cloud=1.d4
+rad_cloud=0.1
+Z_wind = 0.1
+Z_cloud = 0.3
+density_steepness = 10.0
+t_init_frame = 0.1
+com_iter = 10
+/
+
+
