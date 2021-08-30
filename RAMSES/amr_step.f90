@@ -115,6 +115,10 @@ recursive subroutine amr_step(ilevel,icount)
      endif
   end if
 
+  if (ilevel==levelmin) then
+     if (t > t_init_frame) call calc_center_of_mass
+  endif
+
   !-----------------
   ! Update sink cloud particle properties
   !-----------------
@@ -132,7 +136,6 @@ recursive subroutine amr_step(ilevel,icount)
   ! Output results to files
   !------------------------
   if(ilevel==levelmin)then
-
 #ifdef WITHOUTMPI
      output_now_all = output_now
 #else
@@ -468,8 +471,6 @@ recursive subroutine amr_step(ilevel,icount)
      endif
   end if
 #endif
-
-  if (t > t_init_frame) call calc_center_of_mass(ilevel)
 
   !-----------------------
   ! Compute refinement map

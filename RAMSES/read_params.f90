@@ -28,7 +28,7 @@ subroutine read_params
   namelist/run_params/clumpfind,cosmo,pic,sink,lightcone,poisson,hydro,rt,verbose,debug &
        & ,nrestart,ncontrol,nstepmax,nsubcycle,nremap,ordering &
        & ,bisec_tol,static,overload,cost_weighting,aton,nrestart_quad,restart_remap &
-       & ,static_dm,static_gas,static_stars,convert_birth_times,use_proper_time,remap_pscalar
+       & ,static_dm,static_gas,static_stars,convert_birth_times,use_proper_time!,remap_pscalar
   namelist/output_params/noutput,foutput,aout,tout &
        & ,tend,delta_tout,aend,delta_aout,gadget_output,walltime_hrs &
        & ,minutes_dump,output_dir
@@ -44,7 +44,8 @@ subroutine read_params
        & ,theta_camera,phi_camera,dtheta_camera,dphi_camera,focal_camera,dist_camera,ddist_camera &
        & ,perspective_camera,smooth_frame,shader_frame,tstart_theta_camera,tstart_phi_camera &
        & ,tend_theta_camera,tend_phi_camera,method_frame,varmin_frame,varmax_frame
-  namelist/prob_params/x1_c,x2_c,x3_c,dist_init,nwind0,vel_wind,T_wind,ndens_cloud,rad_cloud,Z_wind,Z_cloud,density_steepness,t_init_frame,com_iter,prob_debug
+  namelist/prob_params/x1_c,x2_c,x3_c,dist_init,nwind0,vel_wind,T_wind,ndens_cloud,rad_cloud,Z_wind,Z_cloud &
+       & ,density_steepness,t_init_frame,com_iter,prob_debug,cooling_test
 
   ! MPI initialization
 #ifndef WITHOUTMPI

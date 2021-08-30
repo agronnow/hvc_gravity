@@ -17,6 +17,7 @@ subroutine dump_all
   character(LEN=256)::filename,filename_desc,filedir
   integer::ierr
 
+
   if(nstep_coarse==nstep_coarse_old.and.nstep_coarse>0)return
   if(nstep_coarse==0.and.nrestart>0)return
   if(verbose)write(*,*)'Entering dump_all'
@@ -491,11 +492,26 @@ subroutine output_header(filename)
 #endif
   integer :: ifam, ipart
 
+  integer, parameter :: LUN_MIN=10, LUN_MAX=1000
+  logical :: opened
+  integer :: lun
+
+
   if(verbose)write(*,*)'Entering output_header'
   if(myid==1)then
-     ! Open file
-     fileloc=TRIM(filename)
-     open(newunit=ilun,file=fileloc,form='formatted')
+      ! Open file
+      fileloc=TRIM(filename)
+      ! Modified by AG to work with fortran 2003
+      ilun=-1
+      do lun=LUN_MIN,LUN_MAX
+         inquire(unit=lun,opened=opened)
+         if (.not. opened) then
+            ilun=lun
+            exit
+         end if
+      end do
+
+      open(unit=ilun,file=fileloc,form='formatted')
   end if
 
   ! Compute total number of particles
@@ -660,6 +676,7 @@ subroutine create_output_dirs(filedir)
 #else
   character(LEN=256)::filecmd
   integer :: ierr
+  integer :: cstat
 #endif
 #ifndef WITHOUTMPI
   integer :: info
@@ -675,7 +692,7 @@ subroutine create_output_dirs(filedir)
 #else
     filecmd='mkdir -p '//TRIM(filedir)
     ierr=1
-    call EXECUTE_COMMAND_LINE(filecmd,exitstat=ierr,wait=.true.)
+    ierr=system(filecmd)
     if(ierr.ne.0 .and. ierr.ne.127)then
       write(*,*) 'Error - Could not create ',trim(filedir),' error code=',ierr
 #ifndef WITHOUTMPI
@@ -694,3 +711,14 @@ subroutine create_output_dirs(filedir)
 
 
 end subroutine create_output_dirs
+
+! This is a simple function to search for an available unit.
+! LUN_MIN and LUN_MAX define the range of possible LUNs to check.
+! The UNIT value is returned by the function, and also by the optional
+! argument. This allows the function to be used directly in an OPEN
+! statement, and optionally save the result in a local variable.
+! If no units are available, -1 is returned.
+integer function newunit(unit)
+  integer, intent(out), optional :: unit
+! local
+end function newunit

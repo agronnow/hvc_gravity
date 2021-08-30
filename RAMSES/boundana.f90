@@ -2,9 +2,10 @@
 !############################################################
 !############################################################
 !############################################################
+#define P3_EQUILIBRIUM
 subroutine boundana(x,xb,u,dx,ibound,ncell)
-  use amr_commons, ONLY: t
-  use amr_parameters, ONLY: dp,ndim,nvector,ndens_cloud,T_wind,vel_wind,Z_wind,output_dir,prob_debug,frame_dist
+  use amr_commons, ONLY: t, myid
+  use amr_parameters, ONLY: dp,ndim,nvector,ndens_cloud,T_wind,vel_wind,Z_wind,output_dir,prob_debug,dist_init,frame_dist,y0,nwind0
   use hydro_parameters, ONLY: nvar,nener,boundary_var,gamma,imetal
   use cooling_module, ONLY: twopi, kb, mu_hot
   use poisson_parameters, ONLY: gravity_params
@@ -34,10 +35,12 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
   !================================================================
   integer::ivar,i,idim,ilun
 !  real(dp),dimension(1:nvector,1:nvar+ndim),save::q ! Primitive variables
-  real(dp)::scale_nH,scale_T2,scale_l,scale_d,scale_t,scale_v,scale_b
-  real(dp)::prs,temp,nWind,ekk,emag,erad,rho,e,delta_dist,T2,nH,mu
+  real(dp)::scale_nH,scale_T2,scale_l,scale_d,scale_t,scale_v,scale_b,scale_prs
+  real(dp)::prs,temp,nWind,ekk,emag,erad,rho,e,delta_dist,T2,nH,mu,zprime_l,zprime_r,ydist,U_grav,E_mag
+  real(dp)::ctime=0.0,cvel=0.0,ccurvel=0.0,cdist=0.0,ccom=0.0,cmass=0.0,pdist
   logical::file_exist
-  character(LEN=256)::fileloc
+  character(LEN=256)::fileloc,dummyline
+  logical,save::firstcall = .true.
 
 !#ifdef SOLVERmhd
 !  do ivar=1,nvar+3
@@ -50,7 +53,30 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
 !  end do
 
   call units(scale_l,scale_t,scale_d,scale_v,scale_nh,scale_T2)
-  scale_b =1.0/(dsqrt(2.0*twopi*scale_d)*scale_v)
+  scale_b = 1d6*dsqrt(2.0*twopi*scale_d)*scale_v !Code magnetic unit to microGauss
+  scale_prs = scale_d * scale_v*scale_v
+
+  if ((firstcall) .and. (frame_dist == 0.0)) then
+     fileloc=trim(output_dir)//'framevel.dat'
+     ilun=150
+     inquire(file=fileloc,exist=file_exist)
+     if(file_exist) then
+        open(ilun, file=fileloc)
+        read(ilun,*)dummyline
+        do
+           pdist = cdist
+           read(150,*,end=100)ctime,cvel,ccurvel,cdist,ccom,cmass
+           if (ctime .ge. t) exit
+        end do
+100     close(ilun)
+        frame_dist = pdist
+        if (myid==1)write(*,*)"Restart boundaries with frame_dist ",frame_dist
+     endif
+     nH = 1d-3*scale_nH
+     call GetMuFromTemperature(T_wind,nH,mu)
+     mu_hot = mu
+  endif
+  firstcall = .false.
 
   do i=1,ncell
      rho = u(i,1)
@@ -67,11 +93,41 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
      end do
 #endif
      emag=0.0d0
+     ydist = frame_dist + x(i,2) + dist_init
+
 #ifdef SOLVERmhd
      do idim=1,ndim
         emag=emag+0.125d0*(u(i,idim+ndim+2)+u(i,idim+nvar))**2
      end do
+
+     !Calculate height on staggered grid, B_j-1/2, B_j+1/2
+     zprime_l = (ydist - 0.5*dx - 1.5)/4.0
+     zprime_r = (ydist + 0.5*dx - 1.5)/4.0
+     !Azimuthal field from Sun & Reich (2010) in cylindrical phi coordinate
+     u(i,ndim+3) = 2.0/(1.0+zprime_l*zprime_l)/scale_b
+     u(i,nvar+1) = 2.0/(1.0+zprime_r*zprime_r)/scale_b
+     u(i,ndim+4) = 0.0
+     u(i,nvar+2) = 0.0
+#if NDIM>2
+     u(i,ndim+5) = 0.0
+     u(i,nvar+3) = 0.0
 #endif
+
+#endif
+
+#ifdef P3_EQUILIBRIUM
+#ifdef SOLVERmhd
+     E_mag = 0.125d0*(u(i,ndim+3)+u(i,nvar+1))**2 !Magnetic field energy density
+#else
+     E_mag = 0.0
+#endif
+     nWind = nwind0*dexp(-gravity_params(1)*mu_hot*scale_d*ydist*scale_l/(kb*T_wind))!nwind0*dexp(-ydist/y0)
+     U_grav = -nWind*T_wind/scale_T2!-mu_hot*ndens_wind*gravity_params(1)*y0*scale_l*scale_d/scale_prs !Gravitational potential per unit volume at scale height
+!     nWind = nwind0*dexp(-ydist/y0)
+!     U_grav = -mu_hot*nWind*gravity_params(1)*y0*scale_l*scale_d/scale_prs !Gravitational potential per unit volume at scale height
+     prs = -(U_grav+E_mag) !Pressure from magnetohydrostatic equilibrium: P=-rho*y0*g-B^2/(8*pi)
+     mu = mu_hot
+#else
      ! Compute T in Kelvin
      T2=(gamma-1.0)*(e-ekk-erad-emag)/rho*scale_T2
      nH = rho*scale_nH
@@ -82,14 +138,21 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
 
      delta_dist = xb
      nWind = (rho/mu)*dexp(gravity_params(1)*mu*scale_d*delta_dist*scale_l/(kb*temp))
-     u(i,1) = nWind*mu
      prs = nWind*temp/scale_T2
-     ! Update momentum and energy to match new density at boundary
+#endif
+     u(i,1) = nWind*mu
+     ! Update momentum and energy to match new density and magnetic field at boundary
      ekk=0.0d0
      do idim=1,ndim
         u(i,idim+1) = u(i,idim+1)*u(i,1)/rho
         ekk=ekk+0.5*u(i,idim+1)**2/u(i,1)
      end do
+     emag=0.0d0
+#ifdef SOLVERmhd
+     do idim=1,ndim
+        emag=emag+0.125d0*(u(i,idim+ndim+2)+u(i,idim+nvar))**2
+     end do
+#endif
      u(i,ndim+2) = ekk+erad+emag+prs/(gamma-1.0)
 
      if ((i==1) .and. (prob_debug)) then
@@ -102,29 +165,13 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
         else
            open(ilun, file=fileloc, status="old", position="append", action="write", form='formatted')
         endif
-        write(ilun,'(13E26.16)') t, x(i,2), xb, delta_dist, u(i,1), u(i, 2), u(i, 3), u(i, 4), rho, prs, temp, T2, mu
+        write(ilun,'(13E26.16)') t, x(i,2), ydist, zprime_l, zprime_r, u(i,1), u(i, 2), u(i, 3), u(i, 4), u(i, 5), rho, prs, mu
         close(ilun)
      endif
      !write(*,*) "y: ", x(i,2), " yb: ", xb, " delta_dist: ", delta_dist, " rho: ", u(i,1), " rhob: ", rho, " prs: ", prs, " prsb: ", (kb*rho*T/mu_hot)/scale_prs, " T: ", T
 
      u(i,imetal) = Z_wind*0.02*u(i,1)	!metallicity
      u(i,imetal+1) = 0.0	        !tracer
-#ifdef SOLVERmhd
-  zprime = (frame_dist + x(i,2) + dist_init - 1.5)/4.0
-  !Azimuthal field from Sun & Reich (2010) in cylindrical phi coordinate
-  !Change height to staggered grid, B_j-1/2
-  zprime = zprime - 0.5*dx
-  u(i,ndim+3) = 2.0/(1.0+zprime*zprime) * scale_b
-  !B_j+1/2
-  zprime = zprime + dx 
-  u(i,nvar+1) = 2.0/(1.0+zprime*zprime) * scale_b
-  u(i,ndim+4) = 0.0
-  u(i,nvar+2) = 0.0
-#if NDIM>2
-  u(i,ndim+5) = 0.0
-  u(i,nvar+3) = 0.0
-#endif
-#endif
   end do
 
 !  nWind = 1.d-4
