@@ -56,8 +56,8 @@ subroutine dump_all
         call output_info(filename)
         filename=TRIM(filedir)//'makefile.txt'
         call output_makefile(filename)
-        filename=TRIM(filedir)//'patches.txt'
-        call output_patch(filename)
+!        filename=TRIM(filedir)//'patches.txt'
+!        call output_patch(filename)
         if(cooling .and. .not. neq_chem)then
            filename=TRIM(filedir)//'cooling_'//TRIM(nchar)//'.out'
            call output_cool(filename)
@@ -674,7 +674,7 @@ subroutine create_output_dirs(filedir)
   character(LEN=256)::filedirini
   integer :: info_sys
 #else
-  character(LEN=256)::filecmd
+  character(LEN=256)::filecmd,errmsg
   integer :: ierr
   integer :: cstat
 #endif
@@ -691,10 +691,13 @@ subroutine create_output_dirs(filedir)
     call PXFMKDIR(TRIM(filedir),LEN(TRIM(filedir)),O'755',info_sys)
 #else
     filecmd='mkdir -p '//TRIM(filedir)
+    write(*,*)"comm: ",filecmd
     ierr=1
-    ierr=system(filecmd)
+    call EXECUTE_COMMAND_LINE(filecmd,exitstat=ierr,wait=.true.,cmdmsg=errmsg)
+!    ierr=system(filecmd)
     if(ierr.ne.0 .and. ierr.ne.127)then
-      write(*,*) 'Error - Could not create ',trim(filedir),' error code=',ierr
+       write(*,*) 'Error - Could not create ',trim(filedir),' error code=',ierr
+       write(*,*) 'Error message:',errmsg
 #ifndef WITHOUTMPI
       call MPI_ABORT(MPI_COMM_WORLD,1,info)
 #else

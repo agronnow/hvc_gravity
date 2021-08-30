@@ -44,7 +44,7 @@ subroutine read_params
        & ,theta_camera,phi_camera,dtheta_camera,dphi_camera,focal_camera,dist_camera,ddist_camera &
        & ,perspective_camera,smooth_frame,shader_frame,tstart_theta_camera,tstart_phi_camera &
        & ,tend_theta_camera,tend_phi_camera,method_frame,varmin_frame,varmax_frame
-  namelist/prob_params/x1_c,x2_c,x3_c,dist_init,nwind0,vel_wind,T_wind,ndens_cloud,rad_cloud,Z_wind,Z_cloud,density_steepness,t_init_frame,com_iter,prob_debug,y0
+  namelist/prob_params/x1_c,x2_c,x3_c,dist_init,nwind0,vel_wind,T_wind,ndens_cloud,rad_cloud,Z_wind,Z_cloud,density_steepness,t_init_frame,com_iter,prob_debug,alfven_speed_sq_thresh,y0,cooling_test,bfield_r0
 
   ! MPI initialization
 #ifndef WITHOUTMPI

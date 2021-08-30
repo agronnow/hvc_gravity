@@ -45,6 +45,7 @@ module cooling_module
   integer,parameter::HEII    = 3
 
   real(kind=8)::mu_hot = 0.0
+  real(kind=8)::Tmufloor = 0.0
 
   ! Les parametres de la table par defaut
   integer,parameter     :: nbin_T_fix=101
@@ -248,6 +249,9 @@ subroutine set_model(Nmodel,J0in_in,J0min_in,alpha_in,normfacJ0_in,zreioniz_in, 
   integer :: Nmodel,correct_cooling,realistic_ne
   real(kind=8) :: astart,aend,dasura,T2end,mu,ne,minus1
   Nmodel = 1
+  ! Temperature floor in T/mu corresponding to T=1e4 K
+  ! Value depends on UV background because photoionization changes mu
+  Tmufloor = 8650.0 ! Value appropriate when no photoionization is included
   if (Nmodel /= -1) then
      teyssier=.false.
      theuns=.false.
@@ -486,12 +490,13 @@ subroutine compute_J0min(h,omegab,omega0,omegaL,J0min_in)
   if (verbose_cooling)  write(*,*) 'J0min found ',J0min_in
 end subroutine compute_J0min
 !=======================================================================
-subroutine solve_cooling(nH,T2,zsolar,boost,dt,deltaT2,ncell)
+subroutine solve_cooling(nH,T2,zsolar,boost,dt,deltaT2,ncell,ok_cool)
 !=======================================================================
   implicit none
   integer::ncell
   real(kind=8)::dt
   real(kind=8),dimension(1:ncell)::nH,T2,deltaT2,zsolar,boost
+  logical,dimension(1:ncell)::ok_cool
 
   real(kind=8)::facT,dlog_nH,dlog_T2,precoeff,h,h2,h3
   real(kind=8)::metal,cool,heat,cool_com,heat_com,yy,yy2,yy3
@@ -515,16 +520,18 @@ subroutine solve_cooling(nH,T2,zsolar,boost,dt,deltaT2,ncell)
   h3=h2*h
   precoeff=2d0*X/(3d0*kB)
   do i=1,ncell
-     zzz(i)=zsolar(i)
-     facH(i)=MIN(MAX(log10(nH(i)/boost(i)),table%nH(1)),table%nH(table%n1))
-     i_nH(i)=MIN(MAX(int((facH(i)-table%nH(1))*dlog_nH)+1,1),table%n1-1)
-     w1H(i)=(table%nH(i_nH(i)+1)-facH(i))*dlog_nH
-     w2H(i)=(facH(i)-table%nH(i_nH(i)  ))*dlog_nH
+     if (ok_cool(i))then
+        zzz(i)=zsolar(i)
+        facH(i)=MIN(MAX(log10(nH(i)/boost(i)),table%nH(1)),table%nH(table%n1))
+        i_nH(i)=MIN(MAX(int((facH(i)-table%nH(1))*dlog_nH)+1,1),table%n1-1)
+        w1H(i)=(table%nH(i_nH(i)+1)-facH(i))*dlog_nH
+        w2H(i)=(facH(i)-table%nH(i_nH(i)  ))*dlog_nH
+        time_max(i)=dt*precoeff*nH(i)
+        time(i)=0d0
+        wmax(i)=1d0/time_max(i)
+     endif
      tau(i)=T2(i)
      tau_ini(i)=T2(i)
-     time_max(i)=dt*precoeff*nH(i)
-     time(i)=0d0
-     wmax(i)=1d0/time_max(i)
      ind(i)=i
   end do
 
@@ -555,97 +562,99 @@ subroutine solve_cooling(nH,T2,zsolar,boost,dt,deltaT2,ncell)
 
      n_active=0
      do i=1,n
-        facT=log10(tau(ind(i)))
+        if (ok_cool(i)) then
+           facT=log10(tau(ind(i)))
 
-        if(facT.le.logT2max)then
+           if(facT.le.logT2max)then
 
-           i_T2=MIN(MAX(int((facT-table%T2(1))*dlog_T2)+1,1),table%n2-1)
-           yy=facT-table%T2(i_T2)
-           yy2=yy*yy
-           yy3=yy2*yy
+              i_T2=MIN(MAX(int((facT-table%T2(1))*dlog_T2)+1,1),table%n2-1)
+              yy=facT-table%T2(i_T2)
+              yy2=yy*yy
+              yy3=yy2*yy
 
-           ! Cooling
-           fa=table%cool(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fb=table%cool(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           fprimea=table%cool_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fprimeb=table%cool_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           alpha=fprimea
-           beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
-           gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
-           cool=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
-           cool_prime=cool/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
+              ! Cooling
+              fa=table%cool(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fb=table%cool(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              fprimea=table%cool_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fprimeb=table%cool_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              alpha=fprimea
+              beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
+              gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
+              cool=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
+              cool_prime=cool/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
 
-           ! Heating
-           fa=table%heat(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fb=table%heat(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           fprimea=table%heat_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fprimeb=table%heat_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           alpha=fprimea
-           beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
-           gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
-           heat=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
-           heat_prime=heat/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
+              ! Heating
+              fa=table%heat(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fb=table%heat(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              fprimea=table%heat_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fprimeb=table%heat_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              alpha=fprimea
+              beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
+              gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
+              heat=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
+              heat_prime=heat/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
 
-           ! Compton cooling
-           fa=table%cool_com(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool_com(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fb=table%cool_com(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool_com(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           fprimea=table%cool_com_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool_com_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fprimeb=table%cool_com_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool_com_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           alpha=fprimea
-           beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
-           gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
-           cool_com=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
-           cool_com_prime=cool_com/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
+              ! Compton cooling
+              fa=table%cool_com(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool_com(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fb=table%cool_com(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool_com(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              fprimea=table%cool_com_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%cool_com_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fprimeb=table%cool_com_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%cool_com_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              alpha=fprimea
+              beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
+              gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
+              cool_com=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
+              cool_com_prime=cool_com/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
 
-           ! Compton heating
-           fa=table%heat_com(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat_com(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fb=table%heat_com(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat_com(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           fprimea=table%heat_com_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat_com_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fprimeb=table%heat_com_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat_com_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           alpha=fprimea
-           beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
-           gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
-           heat_com=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
-           heat_com_prime=heat_com/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
+              ! Compton heating
+              fa=table%heat_com(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat_com(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fb=table%heat_com(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat_com(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              fprimea=table%heat_com_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%heat_com_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fprimeb=table%heat_com_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%heat_com_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              alpha=fprimea
+              beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
+              gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
+              heat_com=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
+              heat_com_prime=heat_com/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
 
-           ! Metal cooling
-           fa=table%metal(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%metal(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fb=table%metal(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%metal(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           fprimea=table%metal_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%metal_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
-           fprimeb=table%metal_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%metal_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
-           alpha=fprimea
-           beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
-           gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
-           metal=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
-           metal_prime=metal/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
+              ! Metal cooling
+              fa=table%metal(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%metal(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fb=table%metal(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%metal(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              fprimea=table%metal_prime(i_nH(ind(i)),i_T2  )*w1H(ind(i))+table%metal_prime(i_nH(ind(i))+1,i_T2  )*w2H(ind(i))
+              fprimeb=table%metal_prime(i_nH(ind(i)),i_T2+1)*w1H(ind(i))+table%metal_prime(i_nH(ind(i))+1,i_T2+1)*w2H(ind(i))
+              alpha=fprimea
+              beta=3d0*(fb-fa)/h2-(2d0*fprimea+fprimeb)/h
+              gamma=(fprimea+fprimeb)/h2-2d0*(fb-fa)/h3
+              metal=10d0**(fa+alpha*yy+beta*yy2+gamma*yy3)
+              metal_prime=metal/tau(ind(i))*(alpha+2d0*beta*yy+3d0*gamma*yy2)
 
-           ! Total net cooling
-           lambda=cool+zzz(ind(i))*metal-heat+(cool_com-heat_com)/nH(ind(i))
-           lambda_prime=cool_prime+zzz(ind(i))*metal_prime-heat_prime+(cool_com_prime-heat_com_prime)/nH(ind(i))
+              ! Total net cooling
+              lambda=cool+zzz(ind(i))*metal-heat+(cool_com-heat_com)/nH(ind(i))
+              lambda_prime=cool_prime+zzz(ind(i))*metal_prime-heat_prime+(cool_com_prime-heat_com_prime)/nH(ind(i))
 
-        else
+           else
 
-           lambda=1.42*1d-27*sqrt(tau(ind(i)))*1.1
-           lambda_prime=lambda/2./tau(ind(i))
+              lambda=1.42*1d-27*sqrt(tau(ind(i)))*1.1
+              lambda_prime=lambda/2./tau(ind(i))
 
-        endif
+           endif
 
-        wcool=MAX(abs(lambda)/tau(ind(i))*varmax,wmax(ind(i)),-lambda_prime*varmax)
+           wcool=MAX(abs(lambda)/tau(ind(i))*varmax,wmax(ind(i)),-lambda_prime*varmax)
 
-        tau_old(ind(i))=tau(ind(i))
-        tau(ind(i))=tau(ind(i))*(1d0+lambda_prime/wcool-lambda/tau(ind(i))/wcool)/(1d0+lambda_prime/wcool)
-        time_old(ind(i))=time(ind(i))
-        time(ind(i))=time(ind(i))+1d0/wcool
+           tau_old(ind(i))=tau(ind(i))
+           tau(ind(i))=tau(ind(i))*(1d0+lambda_prime/wcool-lambda/tau(ind(i))/wcool)/(1d0+lambda_prime/wcool)
+           time_old(ind(i))=time(ind(i))
+           time(ind(i))=time(ind(i))+1d0/wcool
 
 !!$        if(i==1)then
 !!$           write(10,'(I5,10(1PE10.3,1X))')iter,tau_old(ind(i)),cool+zzz(ind(i))*metal,heat,lambda
 !!$        endif
 
-        if(time(ind(i))<time_max(ind(i)))then
-           n_active=n_active+1
-           ind(n_active)=ind(i)
-        end if
+           if(time(ind(i))<time_max(ind(i)))then
+              n_active=n_active+1
+              ind(n_active)=ind(i)
+           end if
 
+        endif
      end do
      n=n_active
   end do
@@ -653,7 +662,7 @@ subroutine solve_cooling(nH,T2,zsolar,boost,dt,deltaT2,ncell)
 
   ! Compute exact time solution
   do i=1,ncell
-     tau(i)=tau(i)*(time_max(i)-time_old(i))/(time(i)-time_old(i))+tau_old(i)*(time(i)-time_max(i))/(time(i)-time_old(i))
+     if (ok_cool(i))tau(i)=tau(i)*(time_max(i)-time_old(i))/(time(i)-time_old(i))+tau_old(i)*(time(i)-time_max(i))/(time(i)-time_old(i))
   end do
 
   ! Check positivity
@@ -938,48 +947,49 @@ subroutine cmp_metals(T2,nH,mu,metal_tot,metal_prime,aexp)
   implicit none
   real(kind=8) ::T2,nH,mu,metal_tot,metal_prime,aexp
 
-!!$  ! Compute cooling enhancement due to metals
-!!$  ! Sutherland and Dopita (93) at solar metalicity
-!!$  real(kind=8),dimension(1:91) :: temperature_sd93 = (/ &
-!!$       & 4.00,4.05,4.10,4.15,4.20,4.25,4.30,4.35,4.40,4.45,4.50,4.55,4.60, &
-!!$       & 4.65,4.70,4.75,4.80,4.85,4.90,4.95,5.00,5.05,5.10,5.15,5.20,5.25, &
-!!$       & 5.30,5.35,5.40,5.45,5.50,5.55,5.60,5.65,5.70,5.75,5.80,5.85,5.90, &
-!!$       & 5.95,6.00,6.05,6.10,6.15,6.20,6.25,6.30,6.35,6.40,6.45,6.50,6.55, &
-!!$       & 6.60,6.65,6.70,6.75,6.80,6.85,6.90,6.95,7.00,7.05,7.10,7.15,7.20, &
-!!$       & 7.25,7.30,7.35,7.40,7.45,7.50,7.55,7.60,7.65,7.70,7.75,7.80,7.85, &
-!!$       & 7.90,7.95,8.00,8.05,8.10,8.15,8.20,8.25,8.30,8.35,8.40,8.45,8.50  /)
-!!$  real(kind=8),dimension(1:91) :: excess_cooling_sd93 = (/ &
-!!$       & -25.8772,-24.4777,-23.6389,-22.9812,-22.5772,-22.3998,-22.3194, &
-!!$       & -22.2163,-22.0605,-21.9099,-21.7450,-21.6143,-21.4835,-21.3623, &
-!!$       & -21.2572,-21.1564,-21.0694,-20.9940,-20.9351,-20.8923,-20.8885, &
-!!$       & -20.9153,-20.9224,-20.8994,-20.8669,-20.8556,-20.8446,-20.8439, &
-!!$       & -20.8736,-21.0144,-21.2366,-21.4396,-21.5513,-21.5916,-21.6013, &
-!!$       & -21.6008,-21.6516,-21.7543,-21.8264,-21.8468,-21.8572,-21.8572, &
-!!$       & -21.8468,-21.8364,-21.8364,-21.8681,-21.9734,-22.1119,-22.2315, &
-!!$       & -22.3230,-22.3814,-22.4178,-22.4549,-22.4950,-22.5342,-22.5645, &
-!!$       & -22.5960,-22.5991,-22.5791,-22.5723,-22.5756,-22.5962,-22.6461, &
-!!$       & -22.7149,-22.7740,-22.8215,-22.8739,-22.9121,-22.9331,-22.9689, &
-!!$       & -22.9721,-23.0007,-23.0063,-22.9863,-22.9929,-22.9729,-22.9994, &
-!!$       & -22.9794,-22.9594,-22.9696,-22.9712,-22.9512,-22.9312,-22.9112, &
-!!$       & -22.9145,-22.8945,-22.8745,-22.8798,-22.8598,-22.8398,-22.8472  /)
-!!$  real(kind=8),dimension(1:91) :: excess_prime_sd93 = (/ &
-!!$       & 33.5968475,22.3829498,14.9650421,10.6169891, 5.8140259, 2.5779724, &
-!!$       & 1.8350220, 2.5890045, 3.0639954, 3.1549835, 2.9560089, 2.6150055, &
-!!$       & 2.5199890, 2.2629852, 2.0589905, 1.8779907, 1.6240082, 1.3430023, &
-!!$       & 1.0169983, 0.4660034,-0.2300110,-0.3390045, 0.1589813, 0.5549927, &
-!!$       & 0.4380035, 0.2229919, 0.1170044,-0.2899933,-1.7050018,-3.6300049, &
-!!$       & -4.2519836,-3.1469879,-1.5200043,-0.4999847,-0.0919800,-0.5030060, &
-!!$       & -1.5350037,-1.7480164,-0.9250031,-0.3079987,-0.1040039, 0.1040039, &
-!!$       & 0.2080078, 0.1040039,-0.3169861,-1.3700104,-2.4380188,-2.5809937, &
-!!$       & -2.1109924,-1.4989929,-0.9480133,-0.7350159,-0.7720032,-0.7930145, &
-!!$       & -0.6950073,-0.6180115,-0.3460083, 0.1690063, 0.2679901, 0.0350037, &
-!!$       & -0.2390137,-0.7050018,-1.1869659,-1.2790070,-1.0660248,-0.9989929, &
-!!$       & -0.9059906,-0.5919952,-0.5680084,-0.3899994,-0.3179932,-0.3419952, &
-!!$       & 0.1439972, 0.1339722, 0.1339874,-0.0649872,-0.0650024, 0.3999939, &
-!!$       & 0.0980072,-0.1180115, 0.1840057, 0.4000092, 0.4000092, 0.1670074, &
-!!$       & 0.1669769, 0.3999939, 0.1470032, 0.1470032, 0.4000244, 0.1260071, &
-!!$       & 0.0000000 /)
-
+#ifdef SD93_COOLING
+  ! Compute cooling enhancement due to metals
+  ! Sutherland and Dopita (93) at solar metalicity
+  real(kind=8),dimension(1:91) :: temperature_sd93 = (/ &
+       & 4.00,4.05,4.10,4.15,4.20,4.25,4.30,4.35,4.40,4.45,4.50,4.55,4.60, &
+       & 4.65,4.70,4.75,4.80,4.85,4.90,4.95,5.00,5.05,5.10,5.15,5.20,5.25, &
+       & 5.30,5.35,5.40,5.45,5.50,5.55,5.60,5.65,5.70,5.75,5.80,5.85,5.90, &
+       & 5.95,6.00,6.05,6.10,6.15,6.20,6.25,6.30,6.35,6.40,6.45,6.50,6.55, &
+       & 6.60,6.65,6.70,6.75,6.80,6.85,6.90,6.95,7.00,7.05,7.10,7.15,7.20, &
+       & 7.25,7.30,7.35,7.40,7.45,7.50,7.55,7.60,7.65,7.70,7.75,7.80,7.85, &
+       & 7.90,7.95,8.00,8.05,8.10,8.15,8.20,8.25,8.30,8.35,8.40,8.45,8.50  /)
+  real(kind=8),dimension(1:91) :: excess_cooling_sd93 = (/ &
+       & -25.8772,-24.4777,-23.6389,-22.9812,-22.5772,-22.3998,-22.3194, &
+       & -22.2163,-22.0605,-21.9099,-21.7450,-21.6143,-21.4835,-21.3623, &
+       & -21.2572,-21.1564,-21.0694,-20.9940,-20.9351,-20.8923,-20.8885, &
+       & -20.9153,-20.9224,-20.8994,-20.8669,-20.8556,-20.8446,-20.8439, &
+       & -20.8736,-21.0144,-21.2366,-21.4396,-21.5513,-21.5916,-21.6013, &
+       & -21.6008,-21.6516,-21.7543,-21.8264,-21.8468,-21.8572,-21.8572, &
+       & -21.8468,-21.8364,-21.8364,-21.8681,-21.9734,-22.1119,-22.2315, &
+       & -22.3230,-22.3814,-22.4178,-22.4549,-22.4950,-22.5342,-22.5645, &
+       & -22.5960,-22.5991,-22.5791,-22.5723,-22.5756,-22.5962,-22.6461, &
+       & -22.7149,-22.7740,-22.8215,-22.8739,-22.9121,-22.9331,-22.9689, &
+       & -22.9721,-23.0007,-23.0063,-22.9863,-22.9929,-22.9729,-22.9994, &
+       & -22.9794,-22.9594,-22.9696,-22.9712,-22.9512,-22.9312,-22.9112, &
+       & -22.9145,-22.8945,-22.8745,-22.8798,-22.8598,-22.8398,-22.8472  /)
+  real(kind=8),dimension(1:91) :: excess_prime_sd93 = (/ &
+       & 33.5968475,22.3829498,14.9650421,10.6169891, 5.8140259, 2.5779724, &
+       & 1.8350220, 2.5890045, 3.0639954, 3.1549835, 2.9560089, 2.6150055, &
+       & 2.5199890, 2.2629852, 2.0589905, 1.8779907, 1.6240082, 1.3430023, &
+       & 1.0169983, 0.4660034,-0.2300110,-0.3390045, 0.1589813, 0.5549927, &
+       & 0.4380035, 0.2229919, 0.1170044,-0.2899933,-1.7050018,-3.6300049, &
+       & -4.2519836,-3.1469879,-1.5200043,-0.4999847,-0.0919800,-0.5030060, &
+       & -1.5350037,-1.7480164,-0.9250031,-0.3079987,-0.1040039, 0.1040039, &
+       & 0.2080078, 0.1040039,-0.3169861,-1.3700104,-2.4380188,-2.5809937, &
+       & -2.1109924,-1.4989929,-0.9480133,-0.7350159,-0.7720032,-0.7930145, &
+       & -0.6950073,-0.6180115,-0.3460083, 0.1690063, 0.2679901, 0.0350037, &
+       & -0.2390137,-0.7050018,-1.1869659,-1.2790070,-1.0660248,-0.9989929, &
+       & -0.9059906,-0.5919952,-0.5680084,-0.3899994,-0.3179932,-0.3419952, &
+       & 0.1439972, 0.1339722, 0.1339874,-0.0649872,-0.0650024, 0.3999939, &
+       & 0.0980072,-0.1180115, 0.1840057, 0.4000092, 0.4000092, 0.1670074, &
+       & 0.1669769, 0.3999939, 0.1470032, 0.1470032, 0.4000244, 0.1260071, &
+       & 0.0000000 /)
+#else
   ! Compute cooling enhancement due to metals
   ! Cloudy at solar metalicity
   real(kind=8),dimension(1:91) :: temperature_cc07 = (/ &
@@ -1027,6 +1037,7 @@ subroutine cmp_metals(T2,nH,mu,metal_tot,metal_prime,aexp)
        &  -1.0460, -0.7244, -0.3006, -0.1300,  0.1491,  0.0972,  0.2463, &
        &   0.0252,  0.1079, -0.1893, -0.1033, -0.3547, -0.2393, -0.4280, &
        &  -0.2735, -0.3670, -0.2033, -0.2261, -0.0821, -0.0754,  0.0634 /)
+#endif
   real(kind=8),dimension(1:50)::z_courty=(/ &
        & 0.00000,0.04912,0.10060,0.15470,0.21140,0.27090,0.33330,0.39880, &
        & 0.46750,0.53960,0.61520,0.69450,0.77780,0.86510,0.95670,1.05300, &
@@ -1044,6 +1055,7 @@ subroutine cmp_metals(T2,nH,mu,metal_tot,metal_prime,aexp)
        & 1.3743020,1.4247480,1.4730590,1.5174060,1.5552610,1.5833640,1.5976390, &
        & 1.5925270,1.5613110,1.4949610,1.3813710,1.2041510,0.9403100,0.5555344, &
        & 0.0000000 /)
+
   real(kind=8)::TT,lTT,deltaT,lcool1,lcool2,lcool1_prime,lcool2_prime
   real(kind=8)::ZZ,deltaZ
   real(kind=8)::c1=0.4,c2=10.0,TT0=1d5,TTC=1d6,alpha1=0.15
@@ -1075,30 +1087,39 @@ subroutine cmp_metals(T2,nH,mu,metal_tot,metal_prime,aexp)
   f_courty=1d0/(1d0+ux/g_courty)
   f_courty_prime=ux/g_courty/(1d0+ux/g_courty)**2*g_courty_prime/g_courty
 
-!  if(lTT.ge.temperature_sd93(91))then
-  if(lTT.ge.temperature_cc07(91))then
+#ifdef SD93_COOLING
+  if(lTT.ge.temperature_sd93(91))then
+#else
+     if(lTT.ge.temperature_cc07(91))then
+#endif
      metal_tot=1d-100
      metal_prime=0d0
   else if(lTT.ge.1.0)then
      lcool1=-100d0
      lcool1_prime=0d0
-!      if(lTT.ge.temperature_sd93(1))then
-      if(lTT.ge.temperature_cc07(1))then
-!        iT=1+int((lTT-temperature_sd93(1))/(temperature_sd93(91)-temperature_sd93(1))*90.0)
+     iT=min(iT,90)
+     iT=max(iT,1)
+
+#ifdef SD93_COOLING
+     if(lTT.ge.temperature_sd93(1))then
+        iT=1+int((lTT-temperature_sd93(1))/(temperature_sd93(91)-temperature_sd93(1))*90.0)
+        deltaT=temperature_sd93(iT+1)-temperature_sd93(iT)
+        lcool1 = excess_cooling_sd93(iT+1)*(lTT-temperature_sd93(iT))/deltaT  &
+             & + excess_cooling_sd93(iT)*(temperature_sd93(iT+1)-lTT)/deltaT
+        lcool1_prime  = excess_prime_sd93(iT+1)*(lTT-temperature_sd93(iT))/deltaT  &
+             & + excess_prime_sd93(iT)*(temperature_sd93(iT+1)-lTT)/deltaT
+     endif
+#else
+     if(lTT.ge.temperature_cc07(1))then
         iT=1+int((lTT-temperature_cc07(1))/(temperature_cc07(91)-temperature_cc07(1))*90.0)
-        iT=min(iT,90)
-        iT=max(iT,1)
-!        deltaT=temperature_sd93(iT+1)-temperature_sd93(iT)
-!        lcool1 = excess_cooling_sd93(iT+1)*(lTT-temperature_sd93(iT))/deltaT  &
-!             & + excess_cooling_sd93(iT)*(temperature_sd93(iT+1)-lTT)/deltaT
-!        lcool1_prime  = excess_prime_sd93(iT+1)*(lTT-temperature_sd93(iT))/deltaT  &
-!                    & + excess_prime_sd93(iT)*(temperature_sd93(iT+1)-lTT)/deltaT
+
         deltaT=temperature_cc07(iT+1)-temperature_cc07(iT)
         lcool1 = excess_cooling_cc07(iT+1)*(lTT-temperature_cc07(iT))/deltaT  &
              & + excess_cooling_cc07(iT)*(temperature_cc07(iT+1)-lTT)/deltaT
         lcool1_prime  = excess_prime_cc07(iT+1)*(lTT-temperature_cc07(iT))/deltaT  &
                     & + excess_prime_cc07(iT)*(temperature_cc07(iT+1)-lTT)/deltaT
      endif
+#endif
      ! Fine structure cooling from infrared lines
      lcool2=-31.522879+2.0*lTT-20.0/TT-TT*4.342944d-5
      lcool2_prime=2d0+(20d0/TT-TT*4.342944d-5)*log(10d0)

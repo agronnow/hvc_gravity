@@ -75,8 +75,8 @@ subroutine condinit(x,u,dx,nn)
     zprime_l = (dist - 0.5*dx - 1.5)/4.0
     zprime_r = (dist + 0.5*dx - 1.5)/4.0
     !Azimuthal field from Sun & Reich (2010) in cylindrical phi coordinate
-    q(i,ndim+3) = 2.0/(1.0+zprime_l*zprime_l)/scale_b
-    q(i,nvar+1) = 2.0/(1.0+zprime_r*zprime_r)/scale_b
+    q(i,ndim+3) = 2.0*(4.0/bfield_r0)*dexp(-(bfield_r0-4.0)/4.0)/(1.0+zprime_l*zprime_l)/scale_b
+    q(i,nvar+1) = 2.0*(4.0/bfield_r0)*dexp(-(bfield_r0-4.0)/4.0)/(1.0+zprime_r*zprime_r)/scale_b
     q(i,ndim+4) = 0.0
     q(i,nvar+2) = 0.0
 #if NDIM>2

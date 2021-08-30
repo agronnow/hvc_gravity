@@ -4,8 +4,8 @@
 !############################################################
 #define P3_EQUILIBRIUM
 subroutine boundana(x,xb,u,dx,ibound,ncell)
-  use amr_commons, ONLY: t
-  use amr_parameters, ONLY: dp,ndim,nvector,ndens_cloud,T_wind,vel_wind,Z_wind,output_dir,prob_debug,dist_init,frame_dist,y0,nwind0
+  use amr_commons, ONLY: t, myid
+  use amr_parameters, ONLY: dp,ndim,nvector,ndens_cloud,T_wind,vel_wind,Z_wind,output_dir,prob_debug,dist_init,frame_dist,y0,nwind0,bfield_r0
   use hydro_parameters, ONLY: nvar,nener,boundary_var,gamma,imetal
   use cooling_module, ONLY: twopi, kb, mu_hot
   use poisson_parameters, ONLY: gravity_params
@@ -37,8 +37,10 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
 !  real(dp),dimension(1:nvector,1:nvar+ndim),save::q ! Primitive variables
   real(dp)::scale_nH,scale_T2,scale_l,scale_d,scale_t,scale_v,scale_b,scale_prs
   real(dp)::prs,temp,nWind,ekk,emag,erad,rho,e,delta_dist,T2,nH,mu,zprime_l,zprime_r,ydist,U_grav,E_mag
+  real(dp)::ctime=0.0,cvel=0.0,ccurvel=0.0,cdist=0.0,ccom=0.0,cmass=0.0,pdist
   logical::file_exist
-  character(LEN=256)::fileloc
+  character(LEN=256)::fileloc,dummyline
+  logical,save::firstcall = .true.
 
 !#ifdef SOLVERmhd
 !  do ivar=1,nvar+3
@@ -53,6 +55,28 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
   call units(scale_l,scale_t,scale_d,scale_v,scale_nh,scale_T2)
   scale_b = 1d6*dsqrt(2.0*twopi*scale_d)*scale_v !Code magnetic unit to microGauss
   scale_prs = scale_d * scale_v*scale_v
+
+  if ((firstcall) .and. (frame_dist == 0.0)) then
+     fileloc=trim(output_dir)//'framevel.dat'
+     ilun=150
+     inquire(file=fileloc,exist=file_exist)
+     if(file_exist) then
+        open(ilun, file=fileloc)
+        read(ilun,*)dummyline
+        do
+           pdist = cdist
+           read(150,*,end=100)ctime,cvel,ccurvel,cdist,ccom,cmass
+           if (ctime .ge. t) exit
+        end do
+100     close(ilun)
+        frame_dist = pdist
+        if (myid==1)write(*,*)"Restart boundaries with frame_dist ",frame_dist
+        nH = 1d-3*scale_nH
+        call GetMuFromTemperature(T_wind,nH,mu)
+        mu_hot = mu
+     endif
+  endif
+  firstcall = .false.
 
   do i=1,ncell
      rho = u(i,1)
@@ -69,18 +93,19 @@ subroutine boundana(x,xb,u,dx,ibound,ncell)
      end do
 #endif
      emag=0.0d0
+     ydist = frame_dist + x(i,2) + dist_init
+
 #ifdef SOLVERmhd
      do idim=1,ndim
         emag=emag+0.125d0*(u(i,idim+ndim+2)+u(i,idim+nvar))**2
      end do
 
-     ydist = frame_dist + x(i,2) + dist_init
      !Calculate height on staggered grid, B_j-1/2, B_j+1/2
      zprime_l = (ydist - 0.5*dx - 1.5)/4.0
      zprime_r = (ydist + 0.5*dx - 1.5)/4.0
      !Azimuthal field from Sun & Reich (2010) in cylindrical phi coordinate
-     u(i,ndim+3) = 2.0/(1.0+zprime_l*zprime_l)/scale_b
-     u(i,nvar+1) = 2.0/(1.0+zprime_r*zprime_r)/scale_b
+     u(i,ndim+3) = 2.0*(4.0/bfield_r0)*dexp(-(bfield_r0-4.0)/4.0)/(1.0+zprime_l*zprime_l)/scale_b
+     u(i,nvar+1) = 2.0*(4.0/bfield_r0)*dexp(-(bfield_r0-4.0)/4.0)/(1.0+zprime_r*zprime_r)/scale_b
      u(i,ndim+4) = 0.0
      u(i,nvar+2) = 0.0
 #if NDIM>2

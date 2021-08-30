@@ -290,7 +290,7 @@ module amr_parameters
   integer::IOGROUPSIZE=0           ! Main snapshot
   integer::IOGROUPSIZECONE=0       ! Lightcone
   integer::IOGROUPSIZEREP=0        ! Subfolder size
-  logical::withoutmkdir=.false.    !If true mkdir should be done before the run
+  logical::withoutmkdir=.true.    !If true mkdir should be done before the run
   logical::print_when_io=.false.   !If true print when IO
   logical::synchro_when_io=.false. !If true synchronize when IO
 
@@ -310,6 +310,9 @@ module amr_parameters
   real(dp)::t_init_frame = 0.0  !Only start changing to the CoM frame after this time to avoid early spurious changes in the CoM velocity
   integer::com_iter = 4 !Average CoM velocity over this number of base level time steps to smooth out spurious CoM changes
   logical::prob_debug = .false.
+  logical::cooling_test = .false.
+  real(dp)::alfven_speed_sq_thresh = 0.0 ! If > 0 then add diffusion to cells with squared Alfven speeds above this
+  real(dp)::bfield_r0 = 0.0
 
   real(dp)::frame_dist = 0.0
   real(dp)::y0 = 0.0 !Scale height used when enforcing magnetohydrostatic equilibrium, i.e. when P3_EQUILIBRIUM is defined

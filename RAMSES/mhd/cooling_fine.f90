@@ -11,12 +11,15 @@ subroutine cooling_fine(ilevel)
   !-------------------------------------------------------------------
   ! Compute cooling for fine levels
   !-------------------------------------------------------------------
-  integer::ncache,i,igrid,ngrid
+  integer::ncache,i,igrid,ngrid,totnotok,totnotokcpu,totok,totokcpu,totokall,totnotokall,info
   integer,dimension(1:nvector),save::ind_grid
 
   if(numbtot(1,ilevel)==0)return
   if(verbose)write(*,111)ilevel
 
+
+  totokcpu = 0
+  totnotokcpu = 0
   ! Operator splitting step for cooling source term
   ! by vector sweeps
   ncache=active(ilevel)%ngrid
@@ -25,9 +28,14 @@ subroutine cooling_fine(ilevel)
      do i=1,ngrid
         ind_grid(i)=active(ilevel)%igrid(igrid+i-1)
      end do
-     call coolfine1(ind_grid,ngrid,ilevel)
+     call coolfine1(ind_grid,ngrid,ilevel,totok,totnotok)
+     totokcpu = totokcpu + totok
+     totnotokcpu = totnotokcpu + totnotok
   end do
 
+  call MPI_ALLREDUCE(totokcpu, totokall, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD, info)
+  call MPI_ALLREDUCE(totnotokcpu, totnotokall, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD, info)
+  if(myid==1)write(*,*)"Cooling on level ",ilevel," totok ",totokall," totnotok ",totnotokall
   if((cooling.and..not.neq_chem).and.ilevel==levelmin.and.cosmo)then
 #ifdef grackle
      if(use_grackle==0)then
@@ -47,7 +55,7 @@ end subroutine cooling_fine
 !###########################################################
 !###########################################################
 !###########################################################
-subroutine coolfine1(ind_grid,ngrid,ilevel)
+subroutine coolfine1(ind_grid,ngrid,ilevel,totok,totnotok)
   use amr_commons
   use hydro_commons
   use cooling_module
@@ -68,7 +76,7 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
 #if defined(grackle) && !defined(WITHOUTMPI)
   integer::info
 #endif
-  integer::ilevel,ngrid
+  integer::ilevel,ngrid,totok,totnotok
   integer,dimension(1:nvector)::ind_grid
   !-------------------------------------------------------------------
   !-------------------------------------------------------------------
@@ -77,6 +85,7 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
   real(kind=8)::dtcool,nISM,nCOM,damp_factor,cooling_switch,t_blast
   real(dp)::polytropic_constant=1.
   integer,dimension(1:nvector),save::ind_cell,ind_leaf
+  logical,dimension(1:nvector)::ok_cool
   real(kind=8),dimension(1:nvector),save::nH,T2,delta_T2,ekk,err,emag
   real(kind=8),dimension(1:nvector),save::T2min,Zsolar,boost
   real(dp),dimension(1:3)::skip_loc
@@ -146,7 +155,8 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
   if(.not. cosmo .and. haardt_madau .and. aexp_ini .le. 1.)              &
        aexp_loc = aexp_ini
 #endif
-
+  totok=0
+  totnotok=0
   ! Loop over cells
   do ind=1,twotondim
      iskip=ncoarse+(ind-1)*ngridmax
@@ -283,6 +293,16 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
      ! Compute T2=T/mu in Kelvin
      do i=1,nleaf
         T2(i)=T2(i)/nH(i)*scale_T2
+        !Modified from default: Only apply cooling in cells above temperature floor and with some cloud material
+        if ((T2(i) > Tmufloor) .and. (abs(uold(ind_leaf(i),imetal)-Z_wind*0.02*uold(ind_leaf(i),1)) > 1d-8))then
+           ok_cool(i) = .true.
+           totok = totok+1
+!           uold(ind_leaf(i),imetal+1) = 1.0
+        else
+           ok_cool(i) = .false.
+           totnotok = totnotok+1
+!           uold(ind_leaf(i),imetal+1) = 0.0
+        endif
      end do
 
      ! Compute nH in H/cc
@@ -449,7 +469,7 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
 #else
      ! Compute net cooling at constant nH
      if(cooling.and..not.neq_chem)then
-        call solve_cooling(nH,T2,Zsolar,boost,dtcool,delta_T2,nleaf)
+        call solve_cooling(nH,T2,Zsolar,boost,dtcool,delta_T2,nleaf,ok_cool)
      endif
 #endif
 #ifdef RT
@@ -531,6 +551,7 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
      ! Update fluid internal energy
      if(cooling.or.neq_chem)then
         do i=1,nleaf
+           !write(*,*)'deltaT2: ',delta_T2(i)
            T2(i) = T2(i) + delta_T2(i)
         end do
      endif
@@ -541,8 +562,8 @@ subroutine coolfine1(ind_grid,ngrid,ilevel)
            uold(ind_leaf(i),ndim+2) = T2min(i) + ekk(i) + err(i) + emag(i)
         end do
      else if(cooling .or. neq_chem)then
-        do i=1,nleaf !Modified from default: Only apply cooling in cells above 1e4 K temperature floor
-           if (T2(i) > 1.e4) uold(ind_leaf(i),ndim+2) = T2(i) + T2min(i) + ekk(i) + err(i) + emag(i)
+        do i=1,nleaf
+           uold(ind_leaf(i),ndim+2) = T2(i) + T2min(i) + ekk(i) + err(i) + emag(i)
         end do
      endif
 
