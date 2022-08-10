@@ -142,11 +142,11 @@ public:
 
 #endif
 
-  virtual void GetCenterOfMassZ(double&, double&);
+  virtual void GetCenterOfMassVel(double&, double&);
 
-  virtual void SubtractVelocity(double, double, double);
+  virtual void SubtractVelocity(double, double);
 
-  virtual void SetComovingFrame(double, double&, double&);
+  virtual void SetComovingFrame(double, double&);
 
   /// Returns the dt computed earlier for this level
   /**
