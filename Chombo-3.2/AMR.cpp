@@ -1291,7 +1291,7 @@ int AMR::timeStep(int a_level, int a_stepsLeft, bool a_coarseTimeBoundary)
     {
       for (int l = 0; l <= m_finest_level; l++)
       {
-	m_amrlevels[l]->SetComovingFrame(m_cur_time, m_CoM_prev);
+	m_amrlevels[l]->SetComovingFrame(m_cur_time, m_t_prev);
       }
       m_t_prev = 0.0;
     }
