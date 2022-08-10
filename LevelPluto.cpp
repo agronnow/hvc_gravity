@@ -556,12 +556,12 @@ void LevelPluto::SubtractVelocity(double vel, double CoM, double t_prev)
       pout() << "Could not open framevel.dat file for writing." << endl;
       QUIT_PLUTO(1);
     }
-    fprintf(f, "%.17g %.17g %.17g %.17g\n", g_time, m_RefFrameVelocity, m_dist, CoM);
+    fprintf(f, "%.17g %.17g %.17g %.17g\n", g_time, m_RefFrameVelocity, m_dist);
     fclose(f);
   }
 }
 
-void LevelPluto::SetComovingFrame(double curtime, double& t_prev, double& CoM_prev)
+void LevelPluto::SetComovingFrame(double curtime, double& t_prev)
 {
 //  pout() << "SetFrame" << endl;
   m_RefFrameVelocity = 0.0;
@@ -579,8 +579,7 @@ void LevelPluto::SetComovingFrame(double curtime, double& t_prev, double& CoM_pr
       double dist = 0.0;
       double pdist = 0.0;
       double CoM = 0.0;
-      double pCoM = 0.0;
-      while (fscanf(file, "%lf %lf %lf %lf", &time, &vel, &dist, &CoM) != EOF)
+      while (fscanf(file, "%lf %lf %lf %lf", &time, &vel, &dist) != EOF)
 	{
 	  //      pout() << "time, vel " << time << " " << vel << endl;
 	  if (time > curtime)
@@ -588,17 +587,15 @@ void LevelPluto::SetComovingFrame(double curtime, double& t_prev, double& CoM_pr
 	      m_RefFrameVelocity = pvel;
 	      m_dist = pdist;
 	      t_prev = ptime;
-	      CoM_prev = pCoM;
 	      break;
 	    }
 	  ptime = time;
 	  pvel = vel;
 	  pdist = dist;
-	  pCoM = CoM;
 	}
       fclose(file);
       //pout() << "fdist: " << m_dist << endl;
-          if (prank == 0) pout() << "time, t_prev, framevel, framedist, CoM_prev " << curtime << ", " << t_prev << ", " << m_RefFrameVelocity << ", " << m_dist << ", " << CoM_prev << endl;
+          if (prank == 0) pout() << "time, t_prev, framevel, framedist " << curtime << ", " << t_prev << ", " << m_RefFrameVelocity << ", " << m_dist << endl;
     }
     else 
     {
@@ -611,7 +608,6 @@ void LevelPluto::SetComovingFrame(double curtime, double& t_prev, double& CoM_pr
   {
     m_RefFrameVelocity = 0.0;
     m_dist = 0.0;
-    CoM_prev = -1.e10;
     t_prev = 0.0;
   }
 }
