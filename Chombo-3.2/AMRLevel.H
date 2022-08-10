@@ -427,11 +427,11 @@ public:
   */
   bool hasFinerLevel() const;
 
-  virtual void GetCenterOfMassZ(double&, double&) = 0;
+  virtual void GetCenterOfMassVel(double&, double&) = 0;
 
-  virtual void SubtractVelocity(double, double, double) = 0;
+  virtual void SubtractVelocity(double, double) = 0;
 
-  virtual void SetComovingFrame(double, double&, double&) = 0;
+  virtual void SetComovingFrame(double, double&) = 0;
 
   ///
   /**
