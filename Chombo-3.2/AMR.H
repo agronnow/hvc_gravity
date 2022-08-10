@@ -507,7 +507,6 @@ protected:
 #endif
 
   double m_t_prev;
-  double m_CoM_prev;
   bool m_RestartComoving;
 };
 
