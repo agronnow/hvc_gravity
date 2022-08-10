@@ -1488,9 +1488,9 @@ void AMRLevelPluto::mark_split(const DisjointBoxLayout& finerLevelDomain)
 }
 
 
-void AMRLevelPluto::GetCenterOfMassZ(double& rhoz, double& mass)
+void AMRLevelPluto::GetCenterOfMassVel(double& rhov, double& mass)
 {
-  m_levelPluto.GetCenterOfMassZ(rhoz, mass);
+  m_levelPluto.GetCenterOfMassVel(rhov, mass, m_split_tags);
 }
 
 void AMRLevelPluto::SubtractVelocity(double vel, double CoM, double time)
