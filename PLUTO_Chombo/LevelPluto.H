@@ -95,7 +95,7 @@ public:
   Real getDlMin();
 
 
-  void GetCenterOfMassZ(double&, double&);
+  void GetCenterOfMassVel(double&, double&, LevelData<FArrayBox>&);
   void SubtractVelocity(double, double, double);
   void SetComovingFrame(double, double&, double&);
  
