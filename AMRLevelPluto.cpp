@@ -1493,14 +1493,14 @@ void AMRLevelPluto::GetCenterOfMassVel(double& rhov, double& mass)
   m_levelPluto.GetCenterOfMassVel(rhov, mass, m_split_tags);
 }
 
-void AMRLevelPluto::SubtractVelocity(double vel, double CoM, double time)
+void AMRLevelPluto::SubtractVelocity(double vel, double time)
 {
-  m_levelPluto.SubtractVelocity(vel, CoM, time);
+  m_levelPluto.SubtractVelocity(vel, time);
 }
 
-void AMRLevelPluto::SetComovingFrame(double curtime, double& t_prev, double& CoM_prev)
+void AMRLevelPluto::SetComovingFrame(double curtime, double& t_prev)
 {
-  m_levelPluto.SetComovingFrame(curtime, t_prev, CoM_prev);
+  m_levelPluto.SetComovingFrame(curtime, t_prev);
 }
 
 
