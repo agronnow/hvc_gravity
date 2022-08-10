@@ -459,9 +459,9 @@ Real LevelPluto::step(LevelData<FArrayBox>&       a_U,
 }
 
 
-void LevelPluto::GetCenterOfMassZ(double& Rhoz, double& Mass)
+void LevelPluto::GetCenterOfMassVel(double& Rhov, double& Mass, LevelData<FArrayBox>& a_split_tags)
 {
-  double TotRhoz = 0.0;
+  double TotVel = 0.0;
   double TotMass = 0.0;
 
   for (DataIterator dit = m_grids.dataIterator(); dit.ok(); ++dit)
@@ -491,17 +491,24 @@ void LevelPluto::GetCenterOfMassZ(double& Rhoz, double& Mass)
     D_EXPAND(Ubox.ib = curU.loVect()[IDIR]; Ubox.ie = curU.hiVect()[IDIR]; ,
 	     Ubox.jb = curU.loVect()[JDIR]; Ubox.je = curU.hiVect()[JDIR]; ,
 	     Ubox.kb = curU.loVect()[KDIR]; Ubox.ke = curU.hiVect()[KDIR]; );*/
+	  
+    FArrayBox& split_tags = a_split_tags[dit];
+    double ***splitcells = ArrayBoxMap(KBEG, KEND, JBEG, JEND, IBEG, IEND, split_tags.dataPtr(0));
     DOM_LOOP(k,j,i)
     {
-      double x3 = grid[KDIR].x[k];
-      //UU holds conserved variables and so tracer mass densities rather than tracers. Thus, we do not have to multiply the tracer with rho.
-      double curmass = UU[RHO_CLOUD][k][j][i]*m_dx*m_dx*m_dx;
-      TotMass += curmass;
-      TotRhoz += x3*curmass;
+      if (splitcells[k][j][i] >= 0.5) //Cell is not split
+      {
+	    //UU holds conserved variables and so tracer mass densities rather than tracers. Thus, we do not have to multiply the tracer with rho.
+	    double curmass = UU[RHO_CLOUD][k][j][i]*m_dx*m_dx*m_dx;
+        double vel = UU[MX3][k][j][i] / UU[RHO][k][j][i];
+	    TotMass += curmass;
+	    TotVel += vel*curmass;
+      }
     }
     for (nv = 0; nv < NVAR; nv++) FreeArrayMap(UU[nv]);
+    FreeArrayBoxMap(splitcells, KBEG, KEND, JBEG, JEND, IBEG, IEND);
   }
-  Rhoz = TotRhoz;
+  Rhov = TotVel;
   Mass = TotMass;
 }
 
