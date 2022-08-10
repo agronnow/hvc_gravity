@@ -512,7 +512,7 @@ void LevelPluto::GetCenterOfMassVel(double& Rhov, double& Mass, LevelData<FArray
   Mass = TotMass;
 }
 
-void LevelPluto::SubtractVelocity(double vel, double CoM, double t_prev)
+void LevelPluto::SubtractVelocity(double vel, double t_prev)
 {
 /*  for (DataIterator dit = m_grids.dataIterator(); dit.ok(); ++dit)
   {
