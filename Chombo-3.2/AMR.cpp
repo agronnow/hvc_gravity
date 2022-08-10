@@ -114,7 +114,6 @@ void AMR::setDefaultValues()
 #endif
   m_scheduler = RefCountedPtr<Scheduler>();
   m_t_prev = 0.0;
-  m_CoM_prev = -1.e10;
   m_RestartComoving = false;
 }
 //-----------------------------------------------------------------------
@@ -1270,43 +1269,42 @@ int AMR::timeStep(int a_level, int a_stepsLeft, bool a_coarseTimeBoundary)
   {
 //    pout() << "calcom " << m_amrlevels[0]->time() << " " << m_cur_time << " " << m_CoM_prev << " " << m_t_prev << endl;
     double MassAllLevels = 0.0;
-    double RhozAllLevels = 0.0;
+    double RhovAllLevels = 0.0;
     for (int l = 0 ; l <= m_finest_level; l++)
     {
-      double LevelRhoz = 0.0;
+      double LevelRhov = 0.0;
       double LevelMass = 0.0;
-      m_amrlevels[l]->GetCenterOfMassZ(LevelRhoz, LevelMass);
-      RhozAllLevels += LevelRhoz;
+      m_amrlevels[l]->GetCenterOfMassVel(LevelRhov, LevelMass);
+      RhovAllLevels += LevelRhoz;
       MassAllLevels += LevelMass;
     }
-    double GlobalRhoz = 0.0;
+    double GlobalRhov = 0.0;
     double GlobalMass = 0.0;
-    int red = MPI_Allreduce(&RhozAllLevels, &GlobalRhoz, 1, MPI_DOUBLE, MPI_SUM, Chombo_MPI::comm);
-    if (red != MPI_SUCCESS) MayDay::Error("sorry, but I had a communcation error on calculating integral rho*z");
+    int red = MPI_Allreduce(&RhovAllLevels, &GlobalRhov, 1, MPI_DOUBLE, MPI_SUM, Chombo_MPI::comm);
+    if (red != MPI_SUCCESS) MayDay::Error("sorry, but I had a communcation error on calculating integral rho*v");
     red = MPI_Allreduce(&MassAllLevels, &GlobalMass, 1, MPI_DOUBLE, MPI_SUM, Chombo_MPI::comm);
     if (red != MPI_SUCCESS) MayDay::Error("sorry, but I had a communcation error on calculating total cloud mass");
-    double CenterOfMassZ = GlobalRhoz/GlobalMass;
+    double CenterOfMassVel = GlobalRhov/GlobalMass;
     //    pout() << "Rhoz " << GlobalRhoz << " Mass " << GlobalMass << " CoM " << CenterOfMassZ << endl;
 
     if (m_RestartComoving)
     {
       for (int l = 0; l <= m_finest_level; l++)
       {
-	m_amrlevels[l]->SetComovingFrame(m_cur_time, m_t_prev, m_CoM_prev);
+	m_amrlevels[l]->SetComovingFrame(m_cur_time, m_CoM_prev);
       }
       m_t_prev = 0.0;
     }
-    else if ((m_CoM_prev != -1.e10) && (m_t_prev > 0.0))
+    else if (_t_prev > 0.0)
     {
-      double CoM_vel = (CenterOfMassZ - m_CoM_prev)/(m_cur_time - m_t_prev);
+      //double CoM_vel = (CenterOfMassZ - m_CoM_prev)/(m_cur_time - m_t_prev);
       //            cout.precision(12);
       //      pout() << scientific << "t " << m_amrlevels[0]->time() << " t_prev " << m_t_prev << " CoM " << CenterOfMassZ << " CoM_prev " << m_CoM_prev << " CoM_vel " << CoM_vel << endl;
       for (int l = 0 ; l <= m_finest_level; l++)
       {
-	m_amrlevels[l]->SubtractVelocity(CoM_vel, CenterOfMassZ, m_t_prev);
+	m_amrlevels[l]->SubtractVelocity(CenterOfMassVel, m_t_prev);
       }
     }
-    if ((m_cur_time > 0.0) && !(m_RestartComoving)) m_CoM_prev = CenterOfMassZ;
     m_RestartComoving = false;
     m_t_prev = m_cur_time;
   }
